@@ -42,6 +42,7 @@
 #define MGMT_STATUS_NOT_POWERED		0x0f
 #define MGMT_STATUS_CANCELLED		0x10
 #define MGMT_STATUS_INVALID_INDEX	0x11
+#define MGMT_STATUS_RFKILLED		0x12
 
 struct mgmt_hdr {
 	__le16	opcode;
@@ -92,6 +93,12 @@ struct mgmt_rp_read_index_list {
 #define MGMT_SETTING_BREDR		0x00000080
 #define MGMT_SETTING_HS			0x00000100
 #define MGMT_SETTING_LE			0x00000200
+#define MGMT_SETTING_ADVERTISING	0x00000400
+#define MGMT_SETTING_SECURE_CONN	0x00000800
+#define MGMT_SETTING_DEBUG_KEYS		0x00001000
+#ifdef CONFIG_TIZEN_RANDOM
+#define MGMT_SETTING_PRIVACY		0x00002000
+#endif
 
 #define MGMT_OP_READ_INFO		0x0004
 #define MGMT_READ_INFO_SIZE		0
@@ -178,11 +185,11 @@ struct mgmt_cp_load_link_keys {
 
 struct mgmt_ltk_info {
 	struct mgmt_addr_info addr;
-	__u8	authenticated;
+	__u8	type;
 	__u8	master;
 	__u8	enc_size;
 	__le16	ediv;
-	__u8	rand[8];
+	__le64	rand;
 	__u8	val[16];
 } __packed;
 
@@ -350,17 +357,185 @@ struct mgmt_cp_set_device_id {
 } __packed;
 #define MGMT_SET_DEVICE_ID_SIZE		8
 
-#define MGMT_OP_READ_RSSI	0x0029
-struct mgmt_cp_read_rssi {
-	bdaddr_t bdaddr;
-} __packed;
-#define MGMT_READ_RSSI_SIZE	6
+#define MGMT_OP_SET_ADVERTISING		0x0029
 
-struct mgmt_rp_read_rssi {
-	__u8 status;
+#define MGMT_OP_SET_BREDR		0x002A
+
+#define MGMT_OP_SET_STATIC_ADDRESS	0x002B
+struct mgmt_cp_set_static_address {
 	bdaddr_t bdaddr;
-	__s8 rssi;
 } __packed;
+#define MGMT_SET_STATIC_ADDRESS_SIZE	6
+
+#define MGMT_OP_SET_SCAN_PARAMS		0x002C
+#ifdef CONFIG_TIZEN_WIP
+struct mgmt_cp_set_scan_params {
+	__u8	type;	/* le scan type */
+	__le16	interval;
+	__le16	window;
+} __packed;
+#define MGMT_SET_SCAN_PARAMS_SIZE	5
+#else
+struct mgmt_cp_set_scan_params {
+	__le16	interval;
+	__le16	window;
+} __packed;
+#define MGMT_SET_SCAN_PARAMS_SIZE	4
+#endif
+
+#define MGMT_OP_SET_SECURE_CONN		0x002D
+
+#define MGMT_OP_SET_DEBUG_KEYS		0x002E
+
+enum {
+	DISABLE_PRIVACY,
+	ENABLE_PRIVACY,
+	GEN_IRK_THEN_ENABLE_PRIVACY
+};
+
+#define MGMT_OP_SET_PRIVACY		0x002F
+struct mgmt_cp_set_privacy {
+	__u8 privacy;
+	__u8 irk[16];
+} __packed;
+#define MGMT_SET_PRIVACY_SIZE		17
+
+struct mgmt_irk_info {
+	struct mgmt_addr_info addr;
+	__u8 val[16];
+} __packed;
+
+#define MGMT_OP_LOAD_IRKS		0x0030
+struct mgmt_cp_load_irks {
+	__le16 irk_count;
+	struct mgmt_irk_info irks[0];
+} __packed;
+#define MGMT_LOAD_IRKS_SIZE		2
+
+#ifdef CONFIG_TIZEN_WIP
+#define MGMT_OP_SET_ADVERTISING_PARAMS	0x0031
+struct mgmt_cp_set_advertising_params {
+	__le16  interval_min;
+	__le16  interval_max;
+	__u8 filter_policy;
+	__u8 type;
+} __packed;
+#define MGMT_SET_ADVERTISING_PARAMS_SIZE 6
+
+#define MGMT_OP_SET_ADVERTISING_DATA	0x0032
+struct mgmt_cp_set_advertising_data {
+	__u8    data[HCI_MAX_AD_LENGTH - 3];
+} __packed;
+#define MGMT_SET_ADVERTISING_DATA_SIZE	(HCI_MAX_AD_LENGTH - 3)
+
+#define MGMT_OP_SET_SCAN_RSP_DATA	0x0033
+struct mgmt_cp_set_scan_rsp_data {
+	__u8    data[HCI_MAX_AD_LENGTH];
+} __packed;
+#define MGMT_SET_SCAN_RSP_DATA_SIZE	HCI_MAX_AD_LENGTH
+
+#define MGMT_OP_ADD_DEV_WHITE_LIST		0x0034
+struct mgmt_cp_add_dev_white_list {
+	__u8	bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+#define MGMT_ADD_DEV_WHITE_LIST_SIZE	7
+
+#define MGMT_OP_REMOVE_DEV_FROM_WHITE_LIST		0x0035
+struct mgmt_cp_remove_dev_from_white_list {
+	__u8	bdaddr_type;
+	bdaddr_t bdaddr;
+} __packed;
+#define MGMT_REMOVE_DEV_FROM_WHITE_LIST_SIZE	7
+
+#define MGMT_OP_CLEAR_DEV_WHITE_LIST		0x0036
+#define MGMT_OP_CLEAR_DEV_WHITE_LIST_SIZE		0
+
+/* BEGIN TIZEN_Bluetooth :: RSSI monitoring   */
+#define MGMT_OP_SET_RSSI_ENABLE 0x0037
+#define MGMT_SET_RSSI_ENABLE_SIZE 10
+
+struct mgmt_cp_set_enable_rssi {
+	__s8    low_th;
+	__s8    in_range_th;
+	__s8    high_th;
+	bdaddr_t bdaddr;
+	__s8    link_type;
+} __packed;
+
+struct mgmt_cc_rsp_enable_rssi {
+	__u8     status;
+	__u8     le_ext_opcode;
+	bdaddr_t bt_address;
+	__s8    link_type;
+} __packed;
+
+#define MGMT_OP_GET_RAW_RSSI 0x0038
+#define MGMT_GET_RAW_RSSI_SIZE 7
+
+struct mgmt_cp_get_raw_rssi {
+	bdaddr_t bt_address;
+	__u8     link_type;
+} __packed;
+
+#define MGMT_OP_SET_RSSI_DISABLE 0x0039
+#define MGMT_SET_RSSI_DISABLE_SIZE 7
+struct mgmt_cp_disable_rssi {
+	bdaddr_t   bdaddr;
+	__u8     link_type;
+} __packed;
+struct mgmt_cc_rp_disable_rssi {
+	__u8 status;
+	__u8 le_ext_opcode;
+	bdaddr_t bt_address;
+	__s8    link_type;
+} __packed;
+/* END TIZEN_Bluetooth :: RSSI monitoring */
+
+#define MGMT_OP_START_LE_DISCOVERY      0x003A
+struct mgmt_cp_start_le_discovery {
+	    __u8 type;
+} __packed;
+#define MGMT_START_LE_DISCOVERY_SIZE    1
+
+#define MGMT_OP_STOP_LE_DISCOVERY       0x003B
+struct mgmt_cp_stop_le_discovery {
+	    __u8 type;
+} __packed;
+#define MGMT_STOP_LE_DISCOVERY_SIZE 1
+
+/* BEGIN TIZEN_Bluetooth :: LE auto connection */
+#define MGMT_OP_DISABLE_LE_AUTO_CONNECT		0x003C
+#define MGMT_DISABLE_LE_AUTO_CONNECT_SIZE	0
+/* END TIZEN_Bluetooth */
+
+#define MGMT_LE_CONN_UPDATE_SIZE 14
+#define MGMT_OP_LE_CONN_UPDATE  0x003D
+struct mgmt_cp_le_conn_update {
+	__le16  conn_interval_min;
+	__le16  conn_interval_max;
+	__le16  conn_latency;
+	__le16  supervision_timeout;
+	bdaddr_t bdaddr;
+} __packed;
+
+#define MGMT_OP_SET_MANUFACTURER_DATA		0x003E
+struct mgmt_cp_set_manufacturer_data {
+	__u8 data[28];
+} __packed;
+#define MGMT_SET_MANUFACTURER_DATA_SIZE		28
+
+#define MGMT_SCO_ROLE_HANDSFREE		0x00
+#define MGMT_SCO_ROLE_AUDIO_GATEWAY	0x01
+
+#define MGMT_OP_SET_VOICE_SETTING 0x003F
+struct mgmt_cp_set_voice_setting {
+	bdaddr_t bdaddr;
+	uint8_t  sco_role;
+	uint16_t voice_setting;
+} __packed;
+#define MGMT_SET_VOICE_SETTING_SIZE	9
+#endif
 
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
@@ -417,7 +592,16 @@ struct mgmt_ev_device_connected {
 	__u8	eir[0];
 } __packed;
 
+#define MGMT_DEV_DISCONN_UNKNOWN	0x00
+#define MGMT_DEV_DISCONN_TIMEOUT	0x01
+#define MGMT_DEV_DISCONN_LOCAL_HOST	0x02
+#define MGMT_DEV_DISCONN_REMOTE		0x03
+
 #define MGMT_EV_DEVICE_DISCONNECTED	0x000C
+struct mgmt_ev_device_disconnected {
+	struct mgmt_addr_info addr;
+	__u8	reason;
+} __packed;
 
 #define MGMT_EV_CONNECT_FAILED		0x000D
 struct mgmt_ev_connect_failed {
@@ -489,9 +673,85 @@ struct mgmt_ev_passkey_notify {
 	__u8	entered;
 } __packed;
 
-#define MGMT_EV_DEVICE_NAME_UPDATE		0x0018
+#define MGMT_EV_NEW_IRK			0x0018
+struct mgmt_ev_new_irk {
+	__u8     store_hint;
+	bdaddr_t rpa;
+	struct mgmt_irk_info irk;
+} __packed;
+
+struct mgmt_csrk_info {
+	struct mgmt_addr_info addr;
+	__u8 master;
+	__u8 val[16];
+} __packed;
+
+#define MGMT_EV_NEW_CSRK		0x0019
+struct mgmt_ev_new_csrk {
+	__u8 store_hint;
+	struct mgmt_csrk_info key;
+} __packed;
+
+#ifdef CONFIG_TIZEN_WIP
+/* BEGIN TIZEN_Bluetooth :: name update changes */
+#define MGMT_EV_DEVICE_NAME_UPDATE             0x001A
 struct mgmt_ev_device_name_update {
 	struct mgmt_addr_info addr;
-	__le16	eir_len;
-	__u8	eir[0];
+	__le16  eir_len;
+	__u8    eir[0];
+} __packed;
+/* END TIZEN_Bluetooth :: name update changes */
+
+/* BEGIN TIZEN_Bluetooth :: Add handling of hardware error event   */
+#define MGMT_EV_HARDWARE_ERROR		0x001B
+struct mgmt_ev_hardware_error {
+	__u8	error_code;
+} __packed;
+/* END TIZEN_Bluetooth */
+
+/* BEGIN TIZEN_Bluetooth :: HCI TX Timeout Error   */
+#define MGMT_EV_TX_TIMEOUT_ERROR		0x001C
+/* END TIZEN_Bluetooth */
+
+/* BEGIN TIZEN_Bluetooth :: Add handling of RSSI Events   */
+#define MGMT_EV_RSSI_ALERT             0x001D
+struct mgmt_ev_vendor_specific_rssi_alert {
+	bdaddr_t bdaddr;
+	__s8     link_type;
+	__s8     alert_type;
+	__s8     rssi_dbm;
+} __packed;
+
+#define MGMT_EV_RAW_RSSI             0x001E
+struct mgmt_cc_rp_get_raw_rssi {
+	__u8     status;
+	__s8     rssi_dbm;
+	__u8     link_type;
+	bdaddr_t bt_address;
+} __packed;
+
+#define MGMT_EV_RSSI_ENABLED             0x001F
+#define MGMT_EV_RSSI_DISABLED             0x0020
+/* END TIZEN_Bluetooth :: Handling of RSSI Events */
+
+/* BEGIN TIZEN_Bluetooth :: Add LE connection update Events   */
+#define MGMT_EV_CONN_UPDATED            0x0021
+struct mgmt_ev_conn_updated {
+	struct	mgmt_addr_info addr;
+	__le16	conn_interval;
+	__le16	conn_latency;
+	__le16	supervision_timeout;
+} __packed;
+
+#define MGMT_EV_CONN_UPDATE_FAILED      0x0022
+struct mgmt_ev_conn_update_failed {
+	struct	mgmt_addr_info addr;
+	__u8	status;
+} __packed;
+/* END TIZEN_Bluetooth :: Add LE connection update Events */
+#endif
+
+#define MGMT_EV_NEW_LOCAL_IRK      0x0023
+struct mgmt_ev_new_local_irk {
+	__u8    irk[16];
 } __packed;

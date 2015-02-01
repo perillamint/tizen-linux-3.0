@@ -32,8 +32,8 @@
 #include <asm/unaligned.h>
 
 #include <net/bluetooth/bluetooth.h>
-#include <net/bluetooth/hci_core.h>
 #include <net/bluetooth/l2cap.h>
+#include <net/bluetooth/hci_core.h>
 
 #include "bnep.h"
 
@@ -52,9 +52,7 @@ static struct bnep_session *__bnep_get_session(u8 *dst)
 	BT_DBG("");
 
 	list_for_each_entry(s, &bnep_session_list, list)
-/* BEGIN TIZEN_Bluetooth :: bnep undefined symbol */
-		if (!compare_ether_addr(dst, s->eh.h_source))
-/* END TIZEN_Bluetooth */
+		if (ether_addr_equal(dst, s->eh.h_source))
 			return s;
 
 	return NULL;
@@ -184,8 +182,7 @@ static int bnep_ctrl_set_mcfilter(struct bnep_session *s, u8 *data, int len)
 			a2 = data;
 			data += ETH_ALEN;
 
-			BT_DBG("mc filter %s -> %s",
-				batostr((void *) a1), batostr((void *) a2));
+			BT_DBG("mc filter %pMR -> %pMR", a1, a2);
 
 			/* Iterate from a1 to a2 */
 			set_bit(bnep_mc_hash(a1), (ulong *) &s->mc_filter);
@@ -407,13 +404,12 @@ static int bnep_tx_frame(struct bnep_session *s, struct sk_buff *skb)
 	iv[il++] = (struct kvec) { &type, 1 };
 	len++;
 
-/* BEGIN TIZEN_Bluetooth :: bnep undefined symbol */
-	if (compress_src && !compare_ether_addr(eh->h_dest, s->eh.h_source))
+	if (compress_src && ether_addr_equal(eh->h_dest, s->eh.h_source))
 		type |= 0x01;
 
-	if (compress_dst && !compare_ether_addr(eh->h_source, s->eh.h_dest))
+	if (compress_dst && ether_addr_equal(eh->h_source, s->eh.h_dest))
 		type |= 0x02;
-/* END TIZEN_Bluetooth */
+
 	if (type)
 		skb_pull(skb, ETH_ALEN * 2);
 
@@ -515,20 +511,13 @@ static int bnep_session(void *arg)
 
 static struct device *bnep_get_device(struct bnep_session *session)
 {
-	bdaddr_t *src = &bt_sk(session->sock->sk)->src;
-	bdaddr_t *dst = &bt_sk(session->sock->sk)->dst;
-	struct hci_dev *hdev;
 	struct hci_conn *conn;
 
-	hdev = hci_get_route(dst, src);
-	if (!hdev)
+	conn = l2cap_pi(session->sock->sk)->chan->conn->hcon;
+	if (!conn)
 		return NULL;
 
-	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, dst);
-
-	hci_dev_put(hdev);
-
-	return conn ? &conn->dev : NULL;
+	return &conn->dev;
 }
 
 static struct device_type bnep_type = {
@@ -544,8 +533,8 @@ int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 
 	BT_DBG("");
 
-	baswap((void *) dst, &bt_sk(sock->sk)->dst);
-	baswap((void *) src, &bt_sk(sock->sk)->src);
+	baswap((void *) dst, &l2cap_pi(sock->sk)->chan->dst);
+	baswap((void *) src, &l2cap_pi(sock->sk)->chan->src);
 
 	/* session struct allocated as private part of net_device */
 	dev = alloc_netdev(sizeof(struct bnep_session),

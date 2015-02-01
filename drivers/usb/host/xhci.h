@@ -205,6 +205,10 @@ struct xhci_op_regs {
 #define CMD_PM_INDEX	(1 << 11)
 /* bits 12:31 are reserved (and should be preserved on writes). */
 
+/* IMAN - Interrupt Management Register */
+#define IMAN_IE		(1 << 1)
+#define IMAN_IP		(1 << 0)
+
 /* USBSTS - USB status - status bitmasks */
 /* HC not running - set to 1 when run/stop bit is cleared. */
 #define STS_HALT	XHCI_STS_HALT
@@ -827,6 +831,10 @@ struct xhci_transfer_event {
 	__le32	flags;
 };
 
+/* Transfer event TRB length bit mask */
+/* bits 0:23 */
+#define	EVENT_TRB_LEN(p)		((p) & 0xffffff)
+
 /** Transfer Event bit fields **/
 #define	TRB_TO_EP_ID(p)	(((p) >> 16) & 0x1f)
 
@@ -900,7 +908,6 @@ struct xhci_transfer_event {
 /* Invalid Stream ID Error */
 #define COMP_STRID_ERR	34
 /* Secondary Bandwidth Error - may be returned by a Configure Endpoint cmd */
-/* FIXME - check for this */
 #define COMP_2ND_BW_ERR	35
 /* Split Transaction Error */
 #define	COMP_SPLIT_ERR	36
@@ -1066,6 +1073,9 @@ union xhci_trb {
 /* MFINDEX Wrap Event - microframe counter wrapped */
 #define TRB_MFINDEX_WRAP	39
 /* TRB IDs 40-47 reserved, 48-63 is vendor-defined */
+
+#define TRB_TYPE_LINK_LE32(x)   (((x) & cpu_to_le32(TRB_TYPE_BITMASK)) == \
+		cpu_to_le32(TRB_TYPE(TRB_LINK)))
 
 /* Nec vendor-specific command completion event. */
 #define	TRB_NEC_CMD_COMP	48
@@ -1249,6 +1259,10 @@ struct xhci_hcd {
 	/* data structures */
 	struct xhci_device_context_array *dcbaa;
 	struct xhci_ring	*cmd_ring;
+	unsigned int            cmd_ring_state;
+#define CMD_RING_STATE_RUNNING         (1 << 0)
+#define CMD_RING_STATE_ABORTED         (1 << 1)
+#define CMD_RING_STATE_STOPPED         (1 << 2)
 	unsigned int		cmd_ring_reserved_trbs;
 	struct xhci_ring	*event_ring;
 	struct xhci_erst	erst;
@@ -1312,6 +1326,9 @@ struct xhci_hcd {
 #define XHCI_BROKEN_MSI		(1 << 6)
 #define XHCI_RESET_ON_RESUME	(1 << 7)
 #define XHCI_AMD_0x96_HOST	(1 << 9)
+#define XHCI_TRUST_TX_LENGTH	(1 << 10)
+#define XHCI_SPURIOUS_REBOOT	(1 << 13)
+#define XHCI_AVOID_BEI		(1 << 15)
 	unsigned int		num_active_eps;
 	unsigned int		limit_active_eps;
 	/* There are two roothubs to keep track of bus suspend info for */

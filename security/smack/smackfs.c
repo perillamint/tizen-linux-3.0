@@ -52,6 +52,9 @@ enum smk_inos {
 	SMK_CIPSO2	= 17,	/* load long label -> CIPSO mapping */
 	SMK_REVOKE_SUBJ	= 18,	/* set rules with subject label to '-' */
 	SMK_CHANGE_RULE	= 19,	/* change or add rules (long labels) */
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+	SMK_PERMISSIVE	= 20,	/* permissive mode */
+#endif
 };
 
 /*
@@ -104,11 +107,6 @@ LIST_HEAD(smk_netlbladdr_list);
  * Rule lists are maintained for each label.
  * This master list is just for reading /smack/load and /smack/load2.
  */
-struct smack_master_list {
-	struct list_head	list;
-	struct smack_rule	*smk_rule;
-};
-
 LIST_HEAD(smack_rule_list);
 
 struct smack_parsed_rule {
@@ -217,7 +215,7 @@ static int smk_set_access(struct smack_parsed_rule *srp,
 	}
 
 	if (found == 0) {
-		sp = kzalloc(sizeof(*sp), GFP_KERNEL);
+		sp = kmem_cache_zalloc(smack_rule_cache, GFP_KERNEL);
 		if (sp == NULL) {
 			rc = -ENOMEM;
 			goto out;
@@ -233,7 +231,8 @@ static int smk_set_access(struct smack_parsed_rule *srp,
 		 * it needs to get added for reporting.
 		 */
 		if (global) {
-			smlp = kzalloc(sizeof(*smlp), GFP_KERNEL);
+			smlp = kmem_cache_zalloc(smack_master_list_cache,
+							GFP_KERNEL);
 			if (smlp != NULL) {
 				smlp->smk_rule = sp;
 				list_add_rcu(&smlp->list, &smack_rule_list);
@@ -676,6 +675,71 @@ static const struct file_operations smk_load_ops = {
 	.write		= smk_write_load,
 	.release        = seq_release,
 };
+
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+/**
+ * smk_read_permissive - read() for /smack/permissive
+ * @filp: file pointer, not actually used
+ * @buf: where to put the result
+ * @cn: maximum to send along
+ * @ppos: where to start
+ *
+ * Returns number of bytes read or error code, as appropriate
+ */
+static ssize_t smk_read_permissive(struct file *filp, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	char temp[32];
+	ssize_t rc;
+
+	if (*ppos != 0)
+		return 0;
+
+	sprintf(temp, "%d\n", permissive_mode);
+	rc = simple_read_from_buffer(buf, count, ppos, temp, strlen(temp));
+	return rc;
+}
+
+/**
+ * smk_write_permissive - write() for /smack/permissive
+ * @file: file pointer, not actually used
+ * @buf: where to get the data from
+ * @count: bytes sent
+ * @ppos: where to start
+ *
+ * Returns number of bytes written or error code, as appropriate
+ */
+static ssize_t smk_write_permissive(struct file *file, const char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	char temp[32];
+	int i;
+
+	if (!capable(CAP_MAC_ADMIN))
+		return -EPERM;
+
+	if (count >= sizeof(temp) || count == 0)
+		return -EINVAL;
+
+	if (copy_from_user(temp, buf, count) != 0)
+		return -EFAULT;
+
+	temp[count] = '\0';
+
+	if (sscanf(temp, "%d", &i) != 1)
+		return -EINVAL;
+	if (i < 0 || i > 1)
+		return -EINVAL;
+	permissive_mode = i;
+	return count;
+}
+
+static const struct file_operations smk_permissive_ops = {
+	.read		= smk_read_permissive,
+	.write		= smk_write_permissive,
+	.llseek		= default_llseek,
+};
+#endif	/* End of CONFIG_SECURITY_SMACK_PERMISSIVE_MODE */
 
 /**
  * smk_cipso_doi - initialize the CIPSO domain
@@ -2206,6 +2270,11 @@ static int smk_fill_super(struct super_block *sb, void *data, int silent)
 			S_IRUGO|S_IWUSR},
 		[SMK_CHANGE_RULE] = {
 			"change-rule", &smk_change_rule_ops, S_IRUGO|S_IWUSR},
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+		[SMK_PERMISSIVE] = {
+			"permissive", &smk_permissive_ops, S_IRUGO|S_IWUSR},
+#endif
+ 
 		/* last one */
 			{""}
 	};

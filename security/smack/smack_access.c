@@ -55,6 +55,14 @@ LIST_HEAD(smack_known_list);
 static u32 smack_next_secid = 10;
 
 /*
+ * are we running in permissive mode?
+ * can be overwritten at run-time by /smack/permissive
+ */
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+int permissive_mode = SMACK_PERMISSIVE_ALLOWED;
+#endif
+
+/*
  * what events do we log
  * can be overwritten at run-time by /smack/logging
  */
@@ -157,10 +165,11 @@ int smk_access(struct smack_known *subject_known, char *object_label,
 	if (subject_known->smk_known == object_label)
 		goto out_audit;
 	/*
-	 * A hat subject can read any object.
-	 * A floor object can be read by any subject.
+	 * A hat subject can read or lock any object.
+	 * A floor object can be read or locked by any subject.
 	 */
-	if ((request & MAY_ANYREAD) == request) {
+	if ((request & MAY_ANYREAD) == request ||
+	    (request & MAY_LOCK) == request) {
 		if (object_label == smack_known_floor.smk_known)
 			goto out_audit;
 		if (subject_known == &smack_known_hat)
@@ -187,6 +196,10 @@ out_audit:
 	if (a)
 		smack_log(subject_known->smk_known, object_label, request,
 				rc, a);
+#endif
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+	if (permissive_mode == SMACK_PERMISSIVE_ALLOWED)
+		return 0;
 #endif
 	return rc;
 }

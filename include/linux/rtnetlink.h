@@ -600,6 +600,9 @@ struct tcamsg {
 #define TCA_ACT_TAB 1 /* attr type must be >=1 */	
 #define TCAA_MAX 1
 
+/* New extended info filters for IFLA_EXT_MASK */
+#define RTEXT_FILTER_VF		(1 << 0)
+
 /* End of information exported to user level */
 
 #ifdef __KERNEL__
@@ -758,8 +761,7 @@ extern int lockdep_rtnl_is_held(void);
  * or RTNL. Note : Please prefer rtnl_dereference() or rcu_dereference()
  */
 #define rcu_dereference_rtnl(p)					\
-	rcu_dereference_check(p, rcu_read_lock_held() ||	\
-				 lockdep_rtnl_is_held())
+	rcu_dereference_check(p, lockdep_rtnl_is_held())
 
 /**
  * rtnl_dereference - fetch RCU pointer when updates are prevented by RTNL

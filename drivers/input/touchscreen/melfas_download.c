@@ -1786,7 +1786,9 @@ static void mcsdl_delay(UINT32 nCount)
 {
 
 	#if 1
-
+	if (nCount > (MAX_UDELAY_MS * 1000))
+		mdelay(nCount / 1000);
+	else
 		udelay(nCount);			//1 Baseband delay function
 
 	#else

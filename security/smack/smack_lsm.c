@@ -50,6 +50,7 @@
 #define SMK_SENDING	2
 
 LIST_HEAD(smk_ipv6_port_list);
+static struct kmem_cache *smack_inode_cache;
 
 /**
  * smk_fetch - Fetch the smack label from a file.
@@ -92,7 +93,7 @@ struct inode_smack *new_inode_smack(char *smack)
 {
 	struct inode_smack *isp;
 
-	isp = kzalloc(sizeof(struct inode_smack), GFP_KERNEL);
+	isp = kmem_cache_zalloc(smack_inode_cache, GFP_NOFS);
 	if (isp == NULL)
 		return NULL;
 
@@ -563,7 +564,7 @@ static int smack_inode_alloc_security(struct inode *inode)
  */
 static void smack_inode_free_security(struct inode *inode)
 {
-	kfree(inode->i_security);
+	kmem_cache_free(smack_inode_cache, inode->i_security);
 	inode->i_security = NULL;
 }
 
@@ -3887,6 +3888,10 @@ static __init void init_smack_known_list(void)
 	smk_insert_entry(&smack_known_web);
 }
 
+/* KMEM caches for fast and thrifty allocations */
+struct kmem_cache *smack_rule_cache;
+struct kmem_cache *smack_master_list_cache;
+
 /**
  * smack_init - initialize the smack system
  *
@@ -3900,10 +3905,31 @@ static __init int smack_init(void)
 	if (!security_module_enable(&smack_ops))
 		return 0;
 
+	smack_rule_cache = KMEM_CACHE(smack_rule, 0);
+	if (!smack_rule_cache)
+		return -ENOMEM;
+
+	smack_master_list_cache = KMEM_CACHE(smack_master_list, 0);
+	if (!smack_master_list_cache) {
+		kmem_cache_destroy(smack_rule_cache);
+		return -ENOMEM;
+	}
+
+	smack_inode_cache = KMEM_CACHE(inode_smack, 0);
+	if (!smack_inode_cache) {
+		kmem_cache_destroy(smack_master_list_cache);
+		kmem_cache_destroy(smack_rule_cache);
+		return -ENOMEM;
+	}
+
 	tsp = new_task_smack(&smack_known_floor, &smack_known_floor,
 				GFP_KERNEL);
-	if (tsp == NULL)
+	if (tsp == NULL) {
+		kmem_cache_destroy(smack_master_list_cache);
+		kmem_cache_destroy(smack_rule_cache);
+		kmem_cache_destroy(smack_inode_cache);
 		return -ENOMEM;
+	}
 
 	printk(KERN_INFO "Smack:  Initializing.\n");
 
@@ -3924,6 +3950,17 @@ static __init int smack_init(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+static int __init mode_setup(char *str)
+{
+	unsigned long mode;
+	if (!kstrtoul(str, 10, &mode))
+		permissive_mode = mode ? 1 : 0;
+	return 1;
+}
+__setup("permissive=", mode_setup);
+#endif
 
 /*
  * Smack requires early initialization in order to label

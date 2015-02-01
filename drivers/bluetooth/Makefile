@@ -30,3 +30,7 @@ hci_uart-$(CONFIG_BT_HCIUART_LL)	+= hci_ll.o
 hci_uart-$(CONFIG_BT_HCIUART_ATH3K)	+= hci_ath.o
 hci_uart-$(CONFIG_BT_HCIUART_3WIRE)	+= hci_h5.o
 hci_uart-objs				:= $(hci_uart-y)
+ifeq ($(CONFIG_BCM_BT_LPM),y)
+else
+obj-$(CONFIG_BT_BCM4330) += brcm_rfkill.o
+endif

@@ -210,6 +210,12 @@ struct smk_audit_info {
 	struct common_audit_data a;
 #endif
 };
+
+struct smack_master_list {
+	struct list_head	list;
+	struct smack_rule	*smk_rule;
+};
+
 /*
  * These functions are in smack_lsm.c
  */
@@ -249,6 +255,10 @@ extern struct smack_known smack_known_web;
 extern struct mutex	smack_known_lock;
 extern struct list_head smack_known_list;
 extern struct list_head smk_netlbladdr_list;
+
+/* Cache for fast and thrifty allocations */
+extern struct kmem_cache *smack_rule_cache;
+extern struct kmem_cache *smack_master_list_cache;
 
 extern struct security_operations smack_ops;
 
@@ -311,6 +321,15 @@ static inline int smack_privileged(int cap)
 		return 1;
 	return 0;
 }
+
+#ifdef CONFIG_SECURITY_SMACK_PERMISSIVE_MODE
+/*
+ * permissive mode
+ */
+#define SMACK_PERMISSIVE_DENIED 0x0
+#define SMACK_PERMISSIVE_ALLOWED 0x1
+extern int permissive_mode;
+#endif
 
 /*
  * logging functions

@@ -27,11 +27,19 @@
 
 #include <linux/poll.h>
 #include <net/sock.h>
+#include <linux/seq_file.h>
 
 #ifndef AF_BLUETOOTH
 #define AF_BLUETOOTH	31
 #define PF_BLUETOOTH	AF_BLUETOOTH
 #endif
+
+#define CONFIG_TIZEN_WIP
+
+/* Define below Macro to enable LE Privacy code in kernel;
+ * otherwise comment it to disable the feature.
+ */
+/* #define CONFIG_TIZEN_RANDOM */
 
 /* Bluetooth versions */
 #define BLUETOOTH_VER_1_1	1
@@ -64,6 +72,7 @@ struct bt_security {
 #define BT_SECURITY_LOW		1
 #define BT_SECURITY_MEDIUM	2
 #define BT_SECURITY_HIGH	3
+#define BT_SECURITY_FIPS	4
 
 #define BT_DEFER_SETUP	7
 
@@ -105,6 +114,14 @@ struct bt_power {
  *     than BR/EDR.
  */
 #define BT_CHANNEL_POLICY_AMP_PREFERRED		2
+
+#define BT_VOICE		11
+struct bt_voice {
+	__u16 setting;
+};
+
+#define BT_VOICE_TRANSPARENT			0x0003
+#define BT_VOICE_CVSD_16BIT			0x0060
 
 __printf(1, 2)
 int bt_info(const char *fmt, ...);
@@ -160,26 +177,53 @@ typedef struct {
 	__u8 b[6];
 } __packed bdaddr_t;
 
+#ifdef CONFIG_TIZEN_WIP
+/* automatically enable sniff mode for connection */
+#define TIZEN_SNIFF_TIMEOUT	2	/*2 second*/
+#endif
+
 /* BD Address type */
 #define BDADDR_BREDR		0x00
 #define BDADDR_LE_PUBLIC	0x01
 #define BDADDR_LE_RANDOM	0x02
 
-#define BDADDR_ANY   (&(bdaddr_t) {{0, 0, 0, 0, 0, 0} })
-#define BDADDR_LOCAL (&(bdaddr_t) {{0, 0, 0, 0xff, 0xff, 0xff} })
+static inline bool bdaddr_type_is_valid(__u8 type)
+{
+	switch (type) {
+	case BDADDR_BREDR:
+	case BDADDR_LE_PUBLIC:
+	case BDADDR_LE_RANDOM:
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool bdaddr_type_is_le(__u8 type)
+{
+	switch (type) {
+	case BDADDR_LE_PUBLIC:
+	case BDADDR_LE_RANDOM:
+		return true;
+	}
+
+	return false;
+}
+
+#define BDADDR_ANY  (&(bdaddr_t) {{0, 0, 0, 0, 0, 0}})
+#define BDADDR_NONE (&(bdaddr_t) {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}})
 
 /* Copy, swap, convert BD Address */
-static inline int bacmp(bdaddr_t *ba1, bdaddr_t *ba2)
+static inline int bacmp(const bdaddr_t *ba1, const bdaddr_t *ba2)
 {
 	return memcmp(ba1, ba2, sizeof(bdaddr_t));
 }
-static inline void bacpy(bdaddr_t *dst, bdaddr_t *src)
+static inline void bacpy(bdaddr_t *dst, const bdaddr_t *src)
 {
 	memcpy(dst, src, sizeof(bdaddr_t));
 }
 
 void baswap(bdaddr_t *dst, bdaddr_t *src);
-char *batostr(bdaddr_t *ba);
 
 /* Common socket structures and functions */
 
@@ -192,6 +236,7 @@ struct bt_sock {
 	struct list_head accept_q;
 	struct sock *parent;
 	unsigned long flags;
+	void (*skb_msg_name)(struct sk_buff *, void *, int *);
 };
 
 enum {
@@ -202,10 +247,13 @@ enum {
 struct bt_sock_list {
 	struct hlist_head head;
 	rwlock_t          lock;
+#ifdef CONFIG_PROC_FS
+        int (* custom_seq_show)(struct seq_file *, void *);
+#endif
 };
 
 int  bt_sock_register(int proto, const struct net_proto_family *ops);
-int  bt_sock_unregister(int proto);
+void bt_sock_unregister(int proto);
 void bt_sock_link(struct bt_sock_list *l, struct sock *s);
 void bt_sock_unlink(struct bt_sock_list *l, struct sock *s);
 int  bt_sock_recvmsg(struct kiocb *iocb, struct socket *sock,
@@ -215,6 +263,7 @@ int  bt_sock_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
 uint bt_sock_poll(struct file *file, struct socket *sock, poll_table *wait);
 int  bt_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg);
 int  bt_sock_wait_state(struct sock *sk, int state, unsigned long timeo);
+int  bt_sock_wait_ready(struct sock *sk, unsigned long flags);
 
 void bt_accept_enqueue(struct sock *parent, struct sock *sk);
 void bt_accept_unlink(struct sock *sk);
@@ -233,12 +282,26 @@ struct l2cap_ctrl {
 	__u8		retries;
 };
 
+struct hci_dev;
+
+typedef void (*hci_req_complete_t)(struct hci_dev *hdev, u8 status);
+
+struct hci_req_ctrl {
+	bool			start;
+	u8			event;
+	hci_req_complete_t	complete;
+};
+
 struct bt_skb_cb {
 	__u8 pkt_type;
 	__u8 incoming;
 	__u16 expect;
 	__u8 force_active;
+	struct l2cap_chan *chan;
 	struct l2cap_ctrl control;
+	struct hci_req_ctrl req;
+	bdaddr_t bdaddr;
+	__le16 psm;
 };
 #define bt_cb(skb) ((struct bt_skb_cb *)((skb)->cb))
 
@@ -291,6 +354,11 @@ extern void hci_sock_cleanup(void);
 
 extern int bt_sysfs_init(void);
 extern void bt_sysfs_cleanup(void);
+
+extern int  bt_procfs_init(struct net *net, const char *name,
+			   struct bt_sock_list* sk_list,
+			   int (* seq_show)(struct seq_file *, void *));
+extern void bt_procfs_cleanup(struct net *net, const char *name);
 
 extern struct dentry *bt_debugfs;
 

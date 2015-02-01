@@ -42,8 +42,7 @@
 #undef LSM330DLC_ACCEL_LOGGING
 #undef DEBUG_ODR
 #undef DEBUG_REACTIVE_ALERT
-/* It will be used, when google fusion is enabled. */
-#undef USES_INPUT_DEV
+#define USES_INPUT_DEV
 
 #define VENDOR		"STM"
 #define CHIP_ID		"LSM330"
