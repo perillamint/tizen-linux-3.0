@@ -28,7 +28,7 @@ cd ${TMP_DIR}/lib
 mkdir -p tmp
 dd if=/dev/zero of=${BIN_NAME} count=${BIN_SIZE} bs=1024
 mkfs.ext4 -q -F -t ext4 -b 1024 ${BIN_NAME}
-sudo -n mount -t ext4 ${BIN_NAME} ./tmp -o loop
+sudo mount -t ext4 ${BIN_NAME} ./tmp -o loop
 if [ "$?" != "0" ]; then
 	echo "Failed to mount (or sudo)"
 	exit 1
