@@ -27,12 +27,15 @@ let BIN_SIZE=${BIN_SIZE}+1024+512 # 1 MB journal + 512 KB buffer
 cd ${TMP_DIR}/lib
 mkdir -p tmp
 dd if=/dev/zero of=${BIN_NAME} count=${BIN_SIZE} bs=1024
-mkfs.ext4 -q -F -t ext4 -b 1024 ${BIN_NAME}
+PATH=/sbin:/usr/sbin:$PATH mkfs.ext4 -q -F -t ext4 -b 1024 ${BIN_NAME}
 sudo mount -t ext4 ${BIN_NAME} ./tmp -o loop
 if [ "$?" != "0" ]; then
 	echo "Failed to mount (or sudo)"
 	exit 1
 fi
+
+# Normal user cannot access tmp without it
+sudo chmod 777 ./tmp
 cp modules/* ./tmp -rf
 sudo -n chown root:root ./tmp -R
 sync
