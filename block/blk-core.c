@@ -29,6 +29,8 @@
 #include <linux/fault-inject.h>
 #include <linux/list_sort.h>
 
+#include <linux/proc_fs.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
 
@@ -37,6 +39,53 @@
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
+
+//Benchmark queue.
+static struct proc_dir_entry *blkio_bench_file;
+
+char *benchqueue = NULL;
+const int benchqueue_size = 1048576; // 1MiB benchqueue
+int benchqueue_start = 0;
+int benchqueue_end = 0;
+int benchqueue_ovf = 0;
+
+//TODO: This function cannot handle when msg is bigger then benchqueue_size.
+//      It will not hurt in "general" use case, but it is potential fault point.
+//
+//      Fix this with better algorithm.
+static void benchqueue_logmsg(char *msg)
+{
+	int len = strlen(msg);
+
+	//TODO: Test this offset calculation routine.
+	//      It may be faulty.
+	if(len + benchqueue_start > benchqueue_size)
+	{
+		len = benchqueue_size;
+		memcpy(benchqueue + benchqueue_start, msg, benchqueue_size);
+		memcpy(benchqueue, msg + benchqueue_size - benchqueue_start,
+		       len - benchqueue_size + benchqueue_start);
+
+	}
+	else
+	{
+		memcpy(benchqueue, benchqueue + benchqueue_start, len);
+	}
+
+	benchqueue_end += len;
+
+	if(benchqueue_end > benchqueue_size)
+	{
+		benchqueue_ovf = 1;
+	}
+
+	if(benchqueue_ovf)
+	{
+		benchqueue_start = (benchqueue_size + benchqueue_end) %
+				   benchqueue_size;
+	}
+	benchqueue_end %= benchqueue_size;
+}
 
 static int __make_request(struct request_queue *q, struct bio *bio);
 
@@ -1605,6 +1654,22 @@ void submit_bio(int rw, struct bio *bio)
 {
 	int count = bio_sectors(bio);
 
+	//Benchmark purpose only-code.
+	//We need write only now.
+
+	char b[BDEVNAME_SIZE];
+	char msg[512];
+	if(rw & WRITE)
+		snprintf(msg, 512, "GREP-MAG-BENCHMARK: "
+			"%s(%d): %s block %Lu on %s (%u sectors)\n",
+			current->comm, task_pid_nr(current),
+			(rw & WRITE) ? "WRITE" : "READ",
+			(unsigned long long)bio->bi_sector,
+			bdevname(bio->bi_bdev, b),
+			count);
+
+	benchqueue_logmsg(msg);
+
 	bio->bi_rw |= rw;
 
 	/*
@@ -2760,6 +2825,42 @@ void blk_finish_plug(struct blk_plug *plug)
 }
 EXPORT_SYMBOL(blk_finish_plug);
 
+ static int blkio_bench_read(char *page, char **start, off_t off,
+			     int count, int *eof, void *data)
+{
+	int len = 0;
+	printk("request: %d\n", count);
+	printk("Hello, world!\n");
+
+        printk("benchqueue_size: %d\n"
+               "benchqueue_start: %d\n"
+               "benchqueue_end: %d\n",
+               benchqueue_size, benchqueue_start, benchqueue_end);
+
+	if(benchqueue_end < benchqueue_start) //Toroidal queue is spinning!
+	{
+		memcpy(page, benchqueue + benchqueue_start,
+		       benchqueue_size - benchqueue_start);
+		memcpy(page + benchqueue_size - benchqueue_start,
+		       benchqueue, benchqueue_end + 1);
+		len = benchqueue_size - benchqueue_start + benchqueue_end + 1;
+	}
+	else
+	{
+		memcpy(page, benchqueue + benchqueue_start,
+		       benchqueue_end - benchqueue_start + 1);
+		len = benchqueue_end - benchqueue_start + 1;
+	}
+
+	return len;
+}
+
+static int blkio_bench_write(struct file *file, const char *buffer,
+							 unsigned long count, void *data)
+{
+	return -EFAULT; //This file is NOT intended to write!
+}
+
 int __init blk_dev_init(void)
 {
 	BUILD_BUG_ON(__REQ_NR_BITS > 8 *
@@ -2777,5 +2878,23 @@ int __init blk_dev_init(void)
 	blk_requestq_cachep = kmem_cache_create("blkdev_queue",
 			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
 
+
+	//Create benchmark queue
+	blkio_bench_file = create_proc_entry("blkio_benchmark", 0444, NULL);
+
+	if(blkio_bench_file == NULL)
+		printk(KERN_ERR "blkio benchmark procfs failed!\n");
+
+	//We will never free it. This will NOT unloaded until system is die.
+	benchqueue = kmalloc(benchqueue_size, GFP_KERNEL);
+
+	if(benchqueue == NULL)
+		printk(KERN_ERR "blkio benchmark queue allocation failed!\n");
+
+	blkio_bench_file -> data = benchqueue;
+	blkio_bench_file -> read_proc = blkio_bench_read;
+	blkio_bench_file -> write_proc = blkio_bench_write;
+
+	printk(KERN_DEBUG "blkio queue creation succeeded");
 	return 0;
 }
