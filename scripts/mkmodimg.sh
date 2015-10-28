@@ -22,7 +22,7 @@ fi
 
 # modules image size is dynamically determined
 BIN_SIZE=`du -s ${TMP_DIR}/lib | awk {'printf $1;'}`
-let BIN_SIZE=${BIN_SIZE}+1024+512 # 1 MB journal + 512 KB buffer
+let BIN_SIZE=${BIN_SIZE}+1024+512+512 # 1 MB journal + 512 KB buffer
 
 cd ${TMP_DIR}/lib
 mkdir -p tmp
