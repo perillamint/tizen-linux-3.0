@@ -96,4 +96,11 @@ config BLOCK_COMPAT
 	depends on BLOCK && COMPAT
 	default y
 
+config BIO_BENCHMARK
+	tristate "BIO benchmark"
+	depends on BLOCK=y && KPROBES
+	default m if BLOCK
+	---help---
+	Assignment #1. BIO benchmark.
+
 source block/Kconfig.iosched
